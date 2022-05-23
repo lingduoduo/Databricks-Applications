@@ -1,6 +1,6 @@
 # in case this is run outside of conda environment with python2
 import argparse
-import sys
+import os
 from collections import defaultdict
 
 import mlflow
@@ -30,7 +30,9 @@ class DCN(tfrs.Model):
                         vocabulary=vocabulary, mask_token=None
                     ),
                     tf.keras.layers.Embedding(
-                        len(vocabulary) + 1, self.embedding_dimension
+                        len(vocabulary) + 1,
+                        # self.embedding_dimension
+                        6 * int(pow(len(vocabulary), 0.25)),
                     ),
                 ]
             )
@@ -44,7 +46,9 @@ class DCN(tfrs.Model):
                         vocabulary=vocabulary, mask_value=None
                     ),
                     tf.keras.layers.Embedding(
-                        len(vocabulary) + 1, self.embedding_dimension
+                        len(vocabulary) + 1,
+                        # self.embedding_dimension
+                        6 * int(pow(len(vocabulary), 0.25)),
                     ),
                 ]
             )
@@ -118,7 +122,8 @@ def load_data_file_gift(file, stats):
         "order_time": "0",
         "count": "0",
     }
-    #    training_df = training_df.sample(n=1000)
+
+    training_df = training_df.sample(n=1000)
     training_df.fillna(value=values, inplace=True)
     return training_df
 
@@ -156,19 +161,23 @@ def prepare_training_data_gift(train_ds):
     return training_ds
 
 
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--experiment_name", default="gift_model", type=str, help="experiment_name"
-)
-parser.add_argument(
-    "--embedding_dimension", default=96, type=int, help="embedding_dimension"
-)
-parser.add_argument("--batch_size", default=16384, type=int, help="batch_size")
-parser.add_argument("--learning_rate", default=0.05, type=float, help="learning_rate")
+def parse_args():
+    parser = argparse.ArgumentParser(description="Gift model using DCM")
+    parser.add_argument(
+        "--experiment_name", default="gift_model", type=str, help="experiment_name"
+    )
+    parser.add_argument(
+        "--embedding_dimension", default=96, type=int, help="embedding_dimension"
+    )
+    parser.add_argument("--batch_size", default=16384, type=int, help="batch_size")
+    parser.add_argument(
+        "--learning_rate", default=0.05, type=float, help="learning_rate"
+    )
+    return parser.parse_args()
 
 
-def main(argv):
-    args = parser.parse_args(argv[1:])
+def main():
+    args = parse_args()
     conf = defaultdict(dict)
     conf["embedding_dimension"] = args.embedding_dimension
     conf["batch_size"] = args.batch_size
@@ -179,10 +188,14 @@ def main(argv):
     conf["int_features"] = []
 
     # Fetch the data
-    filename = (
-        "s3://for-you-payer-training-data/65cb05a3-e45a-4a15-915b-90cf082dc203.csv"
-    )
-    # filename = "csv/65cb05a3-e45a-4a15-915b-90cf082dc203.csv"
+    local_file = "csv/65cb05a3-e45a-4a15-915b-90cf082dc203.csv"
+    if not os.path.exists(local_file) and not os.path.isfile(local_file):
+        filename = (
+            "s3://for-you-payer-training-data/65cb05a3-e45a-4a15-915b-90cf082dc203.csv"
+        )
+    else:
+        filename = local_file
+
     dataset, nrow = load_training_gift(filename, "")
     gift = prepare_training_data_gift(dataset)
     shuffled = gift.shuffle(nrow, seed=42, reshuffle_each_iteration=False)
@@ -220,9 +233,10 @@ def main(argv):
     model.compile(optimizer=tf.keras.optimizers.Adam(conf["learning_rate"]))
     model.fit(ds_train, epochs=conf["epochs"], verbose=False)
     metrics = model.evaluate(ds_test, return_dict=True)
-    # tf.keras.models.save_model(model, "./model")
 
-    with mlflow.start_run(run_name="Gift Model Experiments") as run:
+    # tf.keras.models.save_model(model, "./model")
+    # mlflow.set_experiment("gift dcm")
+    with mlflow.start_run(run_name="Gift Model Experiments Using DCM") as run:
         run_id = run.info.run_uuid
         experiment_id = run.info.experiment_id
         mlflow.log_param("size", nrow)
@@ -235,23 +249,8 @@ def main(argv):
         mlflow.log_metric("RMSE", metrics["RMSE"])
         print(f"runid: {run_id}")
         print(f"experimentid: {experiment_id}")
-
-    # tf.saved_model.save(model, "ranking_model")
-    # loaded = tf.saved_model.load("ranking_model")
-    # test_ratings = {}
-    # test_broadcasters = ["kik:user:fottutaqueen87_p7r", "kik:user:t2cleann_ysi", "kik:user:naruhhh_jxy"]
-    # for test_broadcaster in test_broadcasters:
-    # 	test_ratings[test_broadcaster] = loaded({
-    # 		"viewer": tf.constant(["kik:user:payjpri_puk"]),
-    # 		"broadcaster": tf.constant([test_broadcaster]),
-    # 		"product_name": tf.constant(["Grin And Bear It"]),
-    # 		"order_time": tf.constant(["1"]),
-    # }).numpy()
-    #
-    # print("Ratings")
-    # for broadcaster, score in sorted(test_ratings.items(), key=lambda x: x[1], reverse = True):
-    # 	print(f"{broadcaster}: {score}")
+        mlflow.end_run()
 
 
 if __name__ == "__main__":
-    main(sys.argv)
+    main()
