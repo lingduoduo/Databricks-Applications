@@ -1,0 +1,18 @@
+name: lightgbm-gift-regression
+conda_env: conda.yaml
+entry_points:
+  main:
+    parameters:
+      learning_rate: {type: float, default: 0.1}
+      n_estimators: {type: int, default: 300}
+      num_leaves: {type: int, default: 256}
+      max_depth: {type: int, default: -1}
+    command: |
+        python train.py \
+          --learning_rate={learning_rate} \
+          --n_estimators={n_estimators} \
+          --num_leaves={num_leaves} \
+          --max_depth={max_depth}
+  evaluate_model:
+    command:  |
+        python evaluate_model.py

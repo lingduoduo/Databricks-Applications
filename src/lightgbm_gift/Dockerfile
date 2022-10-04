@@ -1,16 +1,16 @@
-FROM python:3.8.8-slim-buster
+#FROM python:3.8.8-slim-buster
+FROM continuumio/miniconda3
+
+EXPOSE 5000
 
 # Working Directory
-WORKDIR /app
+WORKDIR /
 
-# Copy source code to working directory
-COPY . app.py /app/
+COPY requirements.txt ./
 
 # Install packages from requirements.txt
 # hadolint ignore=DL3013
 RUN pip install --no-cache-dir --upgrade pip &&\
     pip install --no-cache-dir --trusted-host pypi.python.org -r requirements.txt
 
-EXPOSE 5000
-
-CMD [ "" ]
+ENTRYPOINT ["mlflow", "run", "."]

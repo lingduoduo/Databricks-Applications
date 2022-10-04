@@ -1,0 +1,19 @@
+name: tfrs-two-tower-gift
+conda_env: conda.yaml
+entry_points:
+  main:
+    parameters:
+      broadcaster_embedding_dimension: {type: int, default: 96}
+      viewer_embedding_dimension: {type: int, default: 96}
+      batch_size: {type: int, default: 16384}
+      learning_rate: {type: float, default: 0.05}
+      epochs: {type: int, default: 5}
+      top_k: {type: int, default: 1000}
+    command: |
+        python train.py \
+          --broadcaster_embedding_dimension={broadcaster_embedding_dimension} \
+          --viewer_embedding_dimension={viewer_embedding_dimension} \
+          --batch_size={batch_size} \
+          --learning_rate={learning_rate} \
+          --epochs={epochs} \
+          --top_k={top_k}

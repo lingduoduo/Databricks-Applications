@@ -1,0 +1,13 @@
+name: tfrs-dcn-gift
+conda_env: conda.yaml
+entry_points:
+  main:
+    parameters:
+      embedding_dimension: {type: int, default: 96}
+      batch_size: {type: int, default: 16384}
+      learning_rate: {type: float, default: 0.05}
+    command: |
+        python train.py \
+          --embedding_dimension={embedding_dimension} \
+          --batch_size={batch_size} \
+          --learning_rate={learning_rate}

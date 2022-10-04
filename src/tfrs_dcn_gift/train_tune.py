@@ -1,13 +1,19 @@
 # in case this is run outside of conda environment with python2
 import argparse
 import os
+import sys
 from collections import defaultdict
 
 import mlflow
+import mlflow.keras
+import mlflow.pyfunc
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 import tensorflow_recommenders as tfrs
+
+from ray import tune
+from ray.tune.integration.mlflow import MLflowLoggerCallback, mlflow_mixin
 
 
 class DCN(tfrs.Model):
@@ -19,6 +25,7 @@ class DCN(tfrs.Model):
         int_features = conf["int_features"]
         self._all_features = str_features + int_features
         self._embeddings = {}
+        self.label_name = conf["label_name"]
 
         # Compute embeddings for string features.
         vocabularies = conf["vocabularies"]
@@ -72,14 +79,14 @@ class DCN(tfrs.Model):
             metrics=[tf.keras.metrics.RootMeanSquaredError("RMSE")],
         )
 
-    def call(self, features):
+    def call(self, inputs):
         # Concatenate embeddings
         embeddings = []
         for feature_name in self._all_features:
             embedding_fn = self._embeddings[feature_name]
-            embeddings.append(embedding_fn(features[feature_name]))
+            embeddings.append(embedding_fn(inputs[feature_name]))
 
-        x = tf.concat(embeddings, axis=1)
+        x = tf.concat(embeddings, 1)
 
         # Build Cross Network
         if self._cross_layer is not None:
@@ -91,27 +98,27 @@ class DCN(tfrs.Model):
 
         return self._logit_layer(x)
 
-    def compute_loss(self, features, training=False):
-        labels = features.pop("count")
-        scores = self(features)
+    def compute_loss(self, inputs, training=False):
+        labels = inputs.pop(self.label_name)
+        scores = self(inputs)
         return self.task(
             labels=labels,
             predictions=scores,
         )
 
 
-def load_data_file_gift(file, stats):
+def load_data_file_gift(file):
     print("loading file:" + file)
     training_df = pd.read_csv(
         file,
         skiprows=[0],
         names=["broadcaster", "viewer", "product_name", "order_time", "count"],
         dtype={
-            "broadcaster": np.unicode,
-            "viewer": np.unicode,
-            "product_name": np.unicode,
-            "order_time": np.unicode,
-            "count": np.int,
+            "broadcaster": str,
+            "viewer": str,
+            "product_name": str,
+            "order_time": str,
+            "count": int,
         },
     )
 
@@ -120,7 +127,7 @@ def load_data_file_gift(file, stats):
         "viewer": "unknown",
         "product_name": "unknown",
         "order_time": "0",
-        "count": "0",
+        "count": 0,
     }
 
     training_df = training_df.sample(n=1000)
@@ -128,8 +135,8 @@ def load_data_file_gift(file, stats):
     return training_df
 
 
-def load_training_gift(file, stats):
-    df = load_data_file_gift(file, stats)
+def load_training_gift(file):
+    df = load_data_file_gift(file)
     print("creating data set")
     training_ds = tf.data.Dataset.from_tensor_slices(
         (
@@ -161,11 +168,17 @@ def prepare_training_data_gift(train_ds):
     return training_ds
 
 
+def feature_mapping(train_ds, feature_name):
+    vocab = train_ds.batch(1_000_000).map(
+        lambda x: x[feature_name],
+        num_parallel_calls=tf.data.AUTOTUNE,
+        deterministic=False,
+    )
+    return np.unique(np.concatenate(list(vocab)))
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Gift model using DCM")
-    parser.add_argument(
-        "--experiment_name", default="gift_model", type=str, help="experiment_name"
-    )
     parser.add_argument(
         "--embedding_dimension", default=96, type=int, help="embedding_dimension"
     )
@@ -176,7 +189,30 @@ def parse_args():
     return parser.parse_args()
 
 
+@mlflow_mixin
+def finetuning_dcn_model(conf, data_train, data_test):
+    # Train the Model.
+    model = DCN(
+        conf=conf,
+        use_cross_layer=True,
+        deep_layer_sizes=[192, 192],
+        projection_dim=None,
+    )
+
+    mlflow.tensorflow.autolog()
+    model.compile(optimizer=tf.keras.optimizers.Adam(conf["learning_rate"]))
+    trainer = model.fit(data_train, epochs=conf["epochs"], verbose=False)
+    # metrics = model.evaluate(data_test, return_dict=True)
+    # print(f"metrics: {metrics}")
+
+    metrics = {"loss": "val_cross_entropy", "f1": "val_f1"}
+    trainer.finetune(model, datamodule = datamodule, strategy = config['finetuning_strategies'])
+    mlflow.log_param('batch_size', conf['batch_size'])
+    mlflow.set_tag('pipeline_step', __file__)
+
+
 def main():
+    # parse command-line arguments
     args = parse_args()
     conf = defaultdict(dict)
     conf["embedding_dimension"] = args.embedding_dimension
@@ -186,17 +222,18 @@ def main():
     conf["deep_layer_sizes"] = [192, 192]
     conf["str_features"] = ["broadcaster", "viewer", "product_name", "order_time"]
     conf["int_features"] = []
+    conf["label_name"] = "count"
 
     # Fetch the data
-    local_file = "csv/65cb05a3-e45a-4a15-915b-90cf082dc203.csv"
-    if not os.path.exists(local_file) and not os.path.isfile(local_file):
-        filename = (
-            "s3://for-you-payer-training-data/65cb05a3-e45a-4a15-915b-90cf082dc203.csv"
-        )
+    print(os.getcwd())
+    if "src.tfrs_dcn_gift" in os.getcwd():
+        filename = "src/csv/65cb05a3-e45a-4a15-915b-90cf082dc203.csv"
+    elif "src/tfrs_dcn_gift" in os.getcwd():
+        filename = "../csv/65cb05a3-e45a-4a15-915b-90cf082dc203.csv"
     else:
-        filename = local_file
+        filename = "s3://tmg-machine-learning-models-dev/for-you-payer-training-data/65cb05a3-e45a-4a15-915b-90cf082dc203.csv"
 
-    dataset, nrow = load_training_gift(filename, "")
+    dataset, nrow = load_training_gift(filename)
     gift = prepare_training_data_gift(dataset)
     shuffled = gift.shuffle(nrow, seed=42, reshuffle_each_iteration=False)
 
@@ -211,46 +248,17 @@ def main():
     ds_test = ds_test.prefetch(tf.data.experimental.AUTOTUNE)
 
     # Fetch feature and vocabularies
-    feature_names = ["viewer", "broadcaster", "product_name", "order_time"]
+    features = ["viewer", "broadcaster", "product_name", "order_time"]
     vocabularies = {}
-    for idx, feature_name in enumerate(feature_names):
-        print(f"{idx}: {feature_name}")
-        vocab = gift.batch(1_000_000).map(
-            lambda x: x[feature_name],
-            num_parallel_calls=tf.data.AUTOTUNE,
-            deterministic=False,
-        )
-        vocabularies[feature_name] = np.unique(np.concatenate(list(vocab)))
+    for idx, feature in enumerate(features):
+        print(f"{idx}: {feature}")
+        vocabularies[feature] = feature_mapping(gift, feature)
     conf["vocabularies"] = vocabularies
 
-    # Train the Model.
-    model = DCN(
-        conf=conf,
-        use_cross_layer=True,
-        deep_layer_sizes=[192, 192],
-        projection_dim=None,
-    )
-    model.compile(optimizer=tf.keras.optimizers.Adam(conf["learning_rate"]))
-    model.fit(ds_train, epochs=conf["epochs"], verbose=False)
-    metrics = model.evaluate(ds_test, return_dict=True)
-
-    # tf.keras.models.save_model(model, "./model")
-    # mlflow.set_experiment("gift dcm")
-    with mlflow.start_run(run_name="Gift Model Experiments Using DCM") as run:
-        run_id = run.info.run_uuid
-        experiment_id = run.info.experiment_id
-        mlflow.log_param("size", nrow)
-        mlflow.log_param("embedding_dimension", conf["embedding_dimension"])
-        mlflow.log_param("batch_size", conf["batch_size"])
-        mlflow.log_param("learning_rate", conf["learning_rate"])
-        mlflow.log_param("epochs", conf["epochs"])
-        mlflow.log_param("str_feature", ",".join(conf["str_features"]))
-
-        mlflow.log_metric("RMSE", metrics["RMSE"])
-        print(f"runid: {run_id}")
-        print(f"experimentid: {experiment_id}")
-        mlflow.end_run()
 
 
 if __name__ == "__main__":
+    print(__package__)
+    if __package__ is None:
+        sys.path.append("src.tfrs_dcn_gift")
     main()
