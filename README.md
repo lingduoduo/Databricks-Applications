@@ -145,111 +145,45 @@ Check ECR, SageMaker and S3 accordingly.
 python evaluate.py
 ```
 
-6. Predict with Athena and SageMaker endpoint
-
-```bash
-DROP TABLE gift_testing_data;
-
-CREATE EXTERNAL TABLE gift_testing_data
-    (
-        `viewer_id` string,
-        `broadcaster_id` string,
-        `product_name` string,
-        `ordered_time` string,
-        `count` int
-    )
-ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.OpenCSVSerde'
-WITH SERDEPROPERTIES (
-   'separatorChar' = ',',
-   'quoteChar' = '"',
-   'escapeChar' = '\\'
-   )
-STORED AS TEXTFILE
-LOCATION 's3://tmg-machine-learning-models-dev/for-you-payer-training-data/'
-TBLPROPERTIES('skip.header.line.count'='1')
-;
-USING EXTERNAL FUNCTION predict_avg_gift (broadcaster_id VARCHAR, 
-    viewer_id VARCHAR, 
-    product_name VARCHAR, 
-    ordered_time VARCHAR
-) 
-RETURNS DOUBLE 
-SAGEMAKER 'lightgbm-gift'
-SELECT 
-    predict_avg_gift("broadcaster_id","viewer_id", "product_name", "ordered_time") AS prediction
-FROM gift_testing_data
-LIMIT 10
-;
-```
-
-### SageMaker - Using Docker containers with SageMaker
-
-https://docs.aws.amazon.com/sagemaker/latest/dg/your-algorithms-training-algo.html
-https://sagemaker-examples.readthedocs.io/en/latest/advanced_functionality/tensorflow_bring_your_own/tensorflow_bring_your_own.html
-https://github.com/aws/amazon-sagemaker-examples/tree/main/advanced_functionality/pipe_bring_your_own
-
-Running your container during training
-
-```angular2html
-    /opt/ml
-    |-- input
-    |   |-- config
-    |   |   |-- hyperparameters.json
-    |   |    -- resourceConfig.json
-    |    -- data
-    |        -- <channel_name>
-    |            -- <input data>
-    |-- model
-    |   -- <model files>
-     -- output
-        -- failure
-```
-
-Create a Docker image and train a model
-
-1. Write a training script
-
-2. Define a container with a Dockerfile
-
-3. Build and tag the Docker image
-
-4. Use the Docker image to start a training job
-
-Pass arguments to the entry point using hyperparameters
-
-1. Implement an argument parser in the entry point script 
-
-2. Start a training job with hyperparameters
-
-Read additional information using environment variables
-
-Get information about the container environment
-
-Execute the entry point
-
-Running your container during hosting
-
-```angular2html
-/opt/ml
-`-- model
-    `-- <model files>
-```
-https://github.com/aws/amazon-sagemaker-examples/tree/main/advanced_functionality
-
-Tensorflow model - https://github.com/aws/amazon-sagemaker-examples/blob/main/advanced_functionality/tensorflow_iris_byom/tensorflow_BYOM_iris.ipynb
-
-https://github.com/aws/amazon-sagemaker-examples/blob/main/advanced_functionality/xgboost_bring_your_own_model/xgboost_bring_your_own_model.ipynb
-
-https://github.com/aws/amazon-sagemaker-examples/blob/main/advanced_functionality/search/ml_experiment_management_using_search.ipynb
-
-
 ### Databricks
 
-- [Push Data Exploration](https://github.meetmecorp.com/pages/lhuang/push-sandbox/docs/pyspark-push-data-exploration_20220906.html)
+- Install Databricks CLI
+```
+pip install databricks-cli
+```
 
-- [Push Train Run Model](https://github.meetmecorp.com/pages/lhuang/push-sandbox/docs/pyspark-push-trail-run-model_20220907.html)
+- Config Databricks token
+```
+databricks configure --token
+```
+Check access credentials `~/.databrickscfg`
 
-- [Sampled Data Profiling](https://github.meetmecorp.com/pages/lhuang/push-sandbox/docs/22-09-07-22_50-DataExploration-4defac725f71f5edbe4aa8d57edb9340.html)
+- Test authentication setup
+```
+databricks workspace ls /Users/lhuang@themeetgroup.com
+databricks workspace ls --absolute --long --id /Users/lhuang@themeetgroup.com
+```
 
-- [Best Model Output from DataBricks AutoML](https://github.meetmecorp.com/pages/lhuang/push-sandbox/docs/22-09-07-22_50-LightGBM-f71a78bf7bf9afe8f71a156e47585a10.html)
+- Print available clusters
+```
+databricks clusters list --output JSON | jq '[ .clusters[] | { name: .cluster_name, id: .cluster_id } ]'
+```
 
+- Configure MLflow tracking uri
+```
+export MLFLOW_TRACKING_URI=databricks
+
+databricks fs ls dbfs:/mnt
+databricks fs ls dbfs:/FileStore
+databricks fs ls dbfs:/databricks-results
+```
+
+- Test Run tutorial MLflow Projects on Databricks
+```
+mlflow run https://github.com/mlflow/mlflow\#examples/sklearn_elasticnet_wine -v 989bb1158944484e4ffbcb479f20353fbaa5ea09 -b databricks --backend-config cluster-spec.json --experiment-id 90a4601a64624ca8a2a0115a6f9eea09
+```
+
+- Download model artifacts
+```
+mlflow artifacts download -r 1cd4da38afc24117a9f4637708b24267 
+```

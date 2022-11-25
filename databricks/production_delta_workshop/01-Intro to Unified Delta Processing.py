@@ -64,8 +64,6 @@
 # MAGIC %md
 # MAGIC 
 # MAGIC ## Spark Structured Streaming                                                   
-# MAGIC 
-# MAGIC <img src="https://github.com/brickmeister/workshop_production_delta/blob/main/img/structuredStreaming.png?raw=true", width = 600> 
 
 # COMMAND ----------
 

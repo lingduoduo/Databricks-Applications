@@ -12,10 +12,11 @@ import pandas as pd
 import tensorflow as tf
 import tensorflow_recommenders as tfrs
 
+
 # from src.util_func.model_helper import predict_ranking_model
 
 class DCN(tfrs.Model):
-    def __init__(self, conf, use_cross_layer, deep_layer_sizes, projection_dim=None):
+    def __init__(self, conf, use_cross_layer, deep_layer_sizes, projection_dim = None):
         super().__init__()
 
         self.embedding_dimension = conf["embedding_dimension"]
@@ -32,7 +33,7 @@ class DCN(tfrs.Model):
             self._embeddings[feature_name] = tf.keras.Sequential(
                 [
                     tf.keras.layers.experimental.preprocessing.StringLookup(
-                        vocabulary=vocabulary, mask_token=None
+                        vocabulary = vocabulary, mask_token = None
                     ),
                     tf.keras.layers.Embedding(
                         len(vocabulary) + 1,
@@ -48,7 +49,7 @@ class DCN(tfrs.Model):
             self._embeddings[feature_name] = tf.keras.Sequential(
                 [
                     tf.keras.layers.IntegerLookup(
-                        vocabulary=vocabulary, mask_value=None
+                        vocabulary = vocabulary, mask_value = None
                     ),
                     tf.keras.layers.Embedding(
                         len(vocabulary) + 1,
@@ -60,21 +61,21 @@ class DCN(tfrs.Model):
 
         if use_cross_layer:
             self._cross_layer = tfrs.layers.dcn.Cross(
-                projection_dim=projection_dim, kernel_initializer="glorot_uniform"
+                projection_dim = projection_dim, kernel_initializer = "glorot_uniform"
             )
         else:
             self._cross_layer = None
 
         self._deep_layers = [
-            tf.keras.layers.Dense(layer_size, activation="relu")
+            tf.keras.layers.Dense(layer_size, activation = "relu")
             for layer_size in deep_layer_sizes
         ]
 
         self._logit_layer = tf.keras.layers.Dense(1)
 
         self.task = tfrs.tasks.Ranking(
-            loss=tf.keras.losses.MeanSquaredError(),
-            metrics=[tf.keras.metrics.RootMeanSquaredError("RMSE")],
+            loss = tf.keras.losses.MeanSquaredError(),
+            metrics = [tf.keras.metrics.RootMeanSquaredError("RMSE")],
         )
 
     def call(self, inputs):
@@ -96,12 +97,12 @@ class DCN(tfrs.Model):
 
         return self._logit_layer(x)
 
-    def compute_loss(self, inputs, training=False):
+    def compute_loss(self, inputs, training = False):
         labels = inputs.pop(self.label_name)
         scores = self(inputs)
         return self.task(
-            labels=labels,
-            predictions=scores,
+            labels = labels,
+            predictions = scores,
         )
 
 
@@ -109,9 +110,9 @@ def load_data_file_gift(file):
     print("loading file:" + file)
     training_df = pd.read_csv(
         file,
-        skiprows=[0],
-        names=["broadcaster", "viewer", "product_name", "order_time", "count"],
-        dtype={
+        skiprows = [0],
+        names = ["broadcaster", "viewer", "product_name", "order_time", "count"],
+        dtype = {
             "broadcaster": str,
             "viewer": str,
             "product_name": str,
@@ -128,8 +129,8 @@ def load_data_file_gift(file):
         "count": 0,
     }
 
-    training_df = training_df.sample(n=1000)
-    training_df.fillna(value=values, inplace=True)
+    training_df = training_df.sample(n = 1000)
+    training_df.fillna(value = values, inplace = True)
     return training_df
 
 
@@ -160,8 +161,8 @@ def prepare_training_data_gift(train_ds):
             "order_time": x["order_time"],
             "count": x["count"],
         },
-        num_parallel_calls=tf.data.AUTOTUNE,
-        deterministic=False,
+        num_parallel_calls = tf.data.AUTOTUNE,
+        deterministic = False,
     )
     return training_ds
 
@@ -169,8 +170,8 @@ def prepare_training_data_gift(train_ds):
 def feature_mapping(train_ds, feature_name):
     vocab = train_ds.batch(1_000_000).map(
         lambda x: x[feature_name],
-        num_parallel_calls=tf.data.AUTOTUNE,
-        deterministic=False,
+        num_parallel_calls = tf.data.AUTOTUNE,
+        deterministic = False,
     )
     return np.unique(np.concatenate(list(vocab)))
 
@@ -204,13 +205,13 @@ class DCNWrapper(mlflow.pyfunc.PythonModel):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Gift model using DCM")
+    parser = argparse.ArgumentParser(description = "Gift model using DCM")
     parser.add_argument(
-        "--embedding_dimension", default=96, type=int, help="embedding_dimension"
+        "--embedding_dimension", default = 96, type = int, help = "embedding_dimension"
     )
-    parser.add_argument("--batch_size", default=16384, type=int, help="batch_size")
+    parser.add_argument("--batch_size", default = 16384, type = int, help = "batch_size")
     parser.add_argument(
-        "--learning_rate", default=0.05, type=float, help="learning_rate"
+        "--learning_rate", default = 0.05, type = float, help = "learning_rate"
     )
     return parser.parse_args()
 
@@ -237,7 +238,7 @@ def main():
 
     dataset, nrow = load_training_gift(filename)
     gift = prepare_training_data_gift(dataset)
-    shuffled = gift.shuffle(nrow, seed=42, reshuffle_each_iteration=False)
+    shuffled = gift.shuffle(nrow, seed = 42, reshuffle_each_iteration = False)
 
     ds_train = shuffled.take(int(nrow * 0.8))
     ds_train = ds_train.cache()
@@ -259,14 +260,14 @@ def main():
 
     # Train the Model.
     model = DCN(
-        conf=conf,
-        use_cross_layer=True,
-        deep_layer_sizes=[192, 192],
-        projection_dim=None,
+        conf = conf,
+        use_cross_layer = True,
+        deep_layer_sizes = [192, 192],
+        projection_dim = None,
     )
-    model.compile(optimizer=tf.keras.optimizers.Adam(conf["learning_rate"]))
-    model.fit(ds_train, epochs=conf["epochs"], verbose=False)
-    metrics = model.evaluate(ds_test, return_dict=True)
+    model.compile(optimizer = tf.keras.optimizers.Adam(conf["learning_rate"]))
+    model.fit(ds_train, epochs = conf["epochs"], verbose = False)
+    metrics = model.evaluate(ds_test, return_dict = True)
     print(f"metrics: {metrics}")
 
     # save the model
@@ -276,7 +277,7 @@ def main():
     # enable auto logging
     mlflow.tensorflow.autolog()
     # mlflow.set_experiment("gift dcn")
-    with mlflow.start_run(run_name="Gift Model Experiments Using DCN") as run:
+    with mlflow.start_run(run_name = "Gift Model Experiments Using DCN") as run:
         run_id = run.info.run_uuid
         experiment_id = run.info.experiment_id
         print(f"run_id: {run_id}")
@@ -286,9 +287,9 @@ def main():
         mlflow.log_metric("RMSE", metrics["RMSE"])
 
         mlflow.pyfunc.log_model(
-            artifact_path=artifacts["model_path"],
-            python_model=DCNWrapper(),
-            artifacts=artifacts,
+            artifact_path = artifacts["model_path"],
+            python_model = DCNWrapper(),
+            artifacts = artifacts,
         )
         mlflow.end_run()
 

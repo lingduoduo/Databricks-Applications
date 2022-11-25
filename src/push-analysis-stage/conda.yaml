@@ -1,0 +1,12 @@
+name: lightgbm-gift-regression
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9
+  - pip
+  - pip:
+      - matplotlib==3.5.2
+      - mlflow==1.26.1
+      - pandas==1.3.4
+      - numpy==1.22
+      - lightgbm==3.3.2
