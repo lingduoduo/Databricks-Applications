@@ -1,0 +1,40 @@
+name: CI pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  ci-pipeline:
+
+    runs-on: bd-self-hosted-stage
+    strategy:
+      max-parallel: 4
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Prepapre Databricks config file
+        run: |
+          echo "$(aws secretsmanager get-secret-value  --secret-id /bigdata/secret_keys  --query SecretString --output text | jq -r .databricks_token)" > /tmp/token-file
+          databricks configure --host "$(aws secretsmanager get-secret-value  --secret-id /bigdata/secret_keys  --query SecretString --output text | jq -r .databricks_workspace_host)" --token-file /tmp/token-file
+          rm -f /tmp/token-file
+
+      - name: Configure Databricks CLI
+        run: |
+          echo "Configure Databricks CLI"
+          databricks --version
+
+      - name: Test Databricks
+        run: |
+          var=$(databricks jobs list --output JSON)
+          echo "test $var"
+
+      - name: Update Databricks repo
+        run: |
+          databricks repos update --repo-id 2041227256860942 --branch main
+
+      - name: Run Databricks job
+        run: |
+          databricks jobs run-now --job-id 924246269918312

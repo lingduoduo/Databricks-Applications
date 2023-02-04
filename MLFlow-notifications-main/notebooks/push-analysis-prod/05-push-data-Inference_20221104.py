@@ -206,7 +206,8 @@ from mlflow.entities.model_registry.model_version_status import ModelVersionStat
 
 # COMMAND ----------
 
-model_uri = summary.best_trial.model_path
+# model_uri = summary.best_trial.model_path
+model_uri = 'runs:/3c3c3d42948a446dae995b9d8286752d/model'
 
 # COMMAND ----------
 

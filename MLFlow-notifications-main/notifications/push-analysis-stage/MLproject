@@ -1,0 +1,7 @@
+name: test
+
+python_env: python_env.yaml
+
+entry_points:
+  main:
+    command: "python 02-push-data-silver-delta_20220927.py"

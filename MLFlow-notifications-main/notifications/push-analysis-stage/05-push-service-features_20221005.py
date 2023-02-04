@@ -42,14 +42,9 @@ most_popular_broadcasters = bronze_df.withColumn("popular_broadcaster"
 
 # COMMAND ----------
 
-user = Window().partitionBy('user_id')
-
-user_log = bronze_df.withColumn('total_push', F.count('*').over(user))\
-    .withColumn('total_opens', F.sum('open_flag').over(user))\
-    .withColumn('min_dt',  F.from_unixtime((F.min('send_ts').over(user))/1000).cast(DateType()))\
-    .withColumn('max_dt', F.from_unixtime((F.max('send_ts').over(user))/1000).cast(DateType()))\
-    .withColumn('max_unix', F.max('send_ts').over(user))\
-    .select(*['user_id', 'total_push', 'open_flag', 'min_dt', 'max_dt', 'max_unix']).distinct()
+bronze_df = bronze_df.withColumn("n_visit", F.row_number()\
+                           .over(Window.partitionBy("network_user_id").orderBy(F.desc("common__timestamp")))\
+                           .cast(IntegerType()))
 
 # COMMAND ----------
 

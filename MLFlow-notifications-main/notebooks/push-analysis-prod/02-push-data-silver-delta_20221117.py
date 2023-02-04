@@ -43,21 +43,108 @@ bronze_df.count()
 
 # COMMAND ----------
 
-# Simple random sampling
-bronze_df_sample = bronze_df.sample(True, 0.01, 28)
+bronze_df.printSchema()
 
 # COMMAND ----------
 
-# Stratified Sampling
+rows = bronze_df.groupBy('network_user_id').count()
+rows.count()
+
+# COMMAND ----------
+
+rows = bronze_df.groupBy('from_user_id').count()
+rows.count()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC ### Sampling Methods
+
+# COMMAND ----------
+
+# 1. Raw dataset
+bronze_df_sample = bronze_df
+
+# COMMAND ----------
+
+bronze_df_sample.count()
+
+# COMMAND ----------
+
+# MAGIC %md 
+# MAGIC Experiment Results - https://dbc-6e4f74ab-0d7d.cloud.databricks.com/?o=1615526246868093#mlflow/experiments/3345621877632982
+
+# COMMAND ----------
+
+# 2. Simple random sampling without replacement
+bronze_df_sample = bronze_df.sample(False, 0.05, 28)
+
+# COMMAND ----------
+
+bronze_df_sample.count()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Experiment Results -
+
+# COMMAND ----------
+
+# 3. Stratified Sampling
 bronze_df_sample = bronze_df.sampleBy('open_flag', {0:0.01, 1:1}, seed=28)
 
 # COMMAND ----------
 
-bronze_df_sample.printSchema()
+bronze_df_sample.count()
 
 # COMMAND ----------
 
-bronze_df_sample.show(1)
+# MAGIC %md
+# MAGIC 
+# MAGIC Experiment Results - 
+
+# COMMAND ----------
+
+# 4. Filter outliers - broadcasters without one open
+bronze_df_pos = (bronze_df.filter(bronze_df.open_flag == 1)
+.groupBy('broadcaster_id')
+.count())
+
+# COMMAND ----------
+
+bronze_df_sample = (bronze_df.join(bronze_df_pos, [bronze_df.broadcaster_id == bronze_df_pos.broadcaster_id], how='inner')
+.select(bronze_df['*'])
+.sampleBy('open_flag', {0:0.02, 1:1}, seed=28))
+
+# COMMAND ----------
+
+bronze_df_sample.count()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC Experiment Results - 
+
+# COMMAND ----------
+
+# 5. Proportional sampling using broadcaster_id
+bronze_df_pos = bronze_df.filter(bronze_df.open_flag == 1)
+bronze_df_neg = bronze_df.filter(bronze_df.open_flag == 0)               
+tot = bronze_df_neg.count()
+bronze_df_ratios = bronze_df_neg.withColumn('ratio', F.lit(50/tot)).groupBy('broadcaster_id').agg(F.sum('ratio').alias('ratio'))
+d = {r['broadcaster_id']: min(1, r['ratio']) for r in bronze_df_ratios.collect()}
+bronze_df_sample = bronze_df_neg.sampleBy('broadcaster_id', d, seed=28).union(bronze_df_pos)
+
+# COMMAND ----------
+
+bronze_df_sample.count()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Experiment Results - https://dbc-6e4f74ab-0d7d.cloud.databricks.com/?o=1615526246868093#mlflow/experiments/3345621877634310
 
 # COMMAND ----------
 
@@ -81,6 +168,7 @@ columns = [
     'utc_day_of_week',
     'utc_hour',
     'broadcaster_id',
+    'network_user_id'
 ]
 
 # COMMAND ----------
@@ -138,8 +226,8 @@ database_name = 'ml_push'
 silver_train_tbl_path = '{}/push_data/silver_train/{}'.format(DATA_OUTPUT_PATH, uid)
 silver_val_tbl_path = '{}/push_data/silver_val/{}'.format(DATA_OUTPUT_PATH, uid)
 
-silver_train_tbl_name = 'silver_l7_push_meetme_train_new_{}'.format(uid)
-silver_val_tbl_name = 'silver_l7_push_meetme_val_new_{}'.format(uid)
+silver_train_tbl_name = 'silver_l7_push_meetme_train_userid_{}'.format(uid)
+silver_val_tbl_name = 'silver_l7_push_meetme_val_userid_{}'.format(uid)
 
 # COMMAND ----------
 
@@ -171,49 +259,53 @@ spark.sql('''
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC CREATE EXTERNAL TABLE IF NOT EXISTS ml_push.silver_l7_push_meetme_train_new (
+# MAGIC CREATE EXTERNAL TABLE IF NOT EXISTS ml_push.silver_l7_push_meetme_train_userid (
 # MAGIC   broadcaster_id STRING,
 # MAGIC   utc_day_of_week STRING,
 # MAGIC   utc_hour STRING,
+# MAGIC   network_user_id STRING,
 # MAGIC   _processing_timestamp TIMESTAMP,
 # MAGIC   open_flag BOOLEAN)
 # MAGIC USING delta
 # MAGIC PARTITIONED BY (_processing_timestamp)
-# MAGIC LOCATION 'dbfs:/mnt/tmg-prod-datalake-outputs/push_data/silver_train_new';
+# MAGIC LOCATION 'dbfs:/mnt/tmg-prod-datalake-outputs/push_data/silver_train_userid';
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC CREATE EXTERNAL TABLE IF NOT EXISTS ml_push.silver_l7_push_meetme_val_new (
+# MAGIC CREATE EXTERNAL TABLE IF NOT EXISTS ml_push.silver_l7_push_meetme_val_userid (
 # MAGIC   broadcaster_id STRING,
 # MAGIC   utc_day_of_week STRING,
 # MAGIC   utc_hour STRING,
+# MAGIC   network_user_id STRING,
 # MAGIC   _processing_timestamp TIMESTAMP,
 # MAGIC   open_flag BOOLEAN)
 # MAGIC USING delta
 # MAGIC PARTITIONED BY (_processing_timestamp)
-# MAGIC LOCATION 'dbfs:/mnt/tmg-prod-datalake-outputs/push_data/silver_val_new';
+# MAGIC LOCATION 'dbfs:/mnt/tmg-prod-datalake-outputs/push_data/silver_val_userid';
 
 # COMMAND ----------
 
 # use current timestamp to generate _processing_timestamp
 spark.sql('''
-  INSERT INTO TABLE ml_push.silver_l7_push_meetme_train_new PARTITION (_processing_timestamp)
+  INSERT INTO TABLE ml_push.silver_l7_push_meetme_train_userid PARTITION (_processing_timestamp)
   SELECT 
       broadcaster_id,
       utc_day_of_week,
       utc_hour,
+      network_user_id,
       CURRENT_TIMESTAMP as _processing_timestamp,
       open_flag
   from `{}`.{}
   '''.format(database_name,silver_train_tbl_name))
 
 spark.sql('''
-  INSERT INTO TABLE ml_push.silver_l7_push_meetme_val_new PARTITION (_processing_timestamp)
+  INSERT INTO TABLE ml_push.silver_l7_push_meetme_val_userid PARTITION (_processing_timestamp)
   SELECT
       broadcaster_id,
       utc_day_of_week,
       utc_hour,
+      network_user_id,
       CURRENT_TIMESTAMP as _processing_timestamp,
       open_flag
   from `{}`.{}
@@ -223,13 +315,13 @@ spark.sql('''
 
 # MAGIC %sql
 # MAGIC 
-# MAGIC select * from ml_push.silver_l7_push_meetme_train_new where _processing_timestamp = (select max(_processing_timestamp) from ml_push.silver_l7_push_meetme_train_new)
+# MAGIC select * from ml_push.silver_l7_push_meetme_train_userid where _processing_timestamp = (select max(_processing_timestamp) from ml_push.silver_l7_push_meetme_train_userid)
 
 # COMMAND ----------
 
 # MAGIC %sql
 # MAGIC 
-# MAGIC select * from ml_push.silver_l7_push_meetme_val_new where _processing_timestamp = (select max(_processing_timestamp) from ml_push.silver_l7_push_meetme_val_new)
+# MAGIC select * from ml_push.silver_l7_push_meetme_val_userid where _processing_timestamp = (select max(_processing_timestamp) from ml_push.silver_l7_push_meetme_val_userid)
 
 # COMMAND ----------
 
@@ -249,9 +341,10 @@ select
     broadcaster_id,
     utc_day_of_week,
     utc_hour,
+    network_user_id,
     open_flag 
-from ml_push.silver_l7_push_meetme_train_new 
-where _processing_timestamp = (select max(_processing_timestamp) from ml_push.silver_l7_push_meetme_train_new)
+from ml_push.silver_l7_push_meetme_train_userid 
+where _processing_timestamp = (select max(_processing_timestamp) from ml_push.silver_l7_push_meetme_train_userid)
 '''
 )
 
@@ -261,6 +354,7 @@ columns = [
     'open_flag',
     'utc_day_of_week',
     'utc_hour',
+    'network_user_id',
     'broadcaster_id'
 ]
 
@@ -285,7 +379,11 @@ import databricks.automl
 
 # COMMAND ----------
 
-summary = databricks.automl.classify(silver_train_df, target_col='open_flag', primary_metric="f1", data_dir='dbfs:/automl/ml_push', timeout_minutes=60)
+silver_train_df.show(10)
+
+# COMMAND ----------
+
+summary = databricks.automl.classify(silver_train_df, target_col='open_flag', primary_metric="f1", data_dir='dbfs:/automl/ml_push_userid', timeout_minutes=60)
 
 # COMMAND ----------
 

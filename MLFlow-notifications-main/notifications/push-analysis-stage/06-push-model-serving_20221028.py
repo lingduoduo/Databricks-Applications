@@ -41,81 +41,17 @@ model_version
 
 # COMMAND ----------
 
-# Fetch model uri
-model_uri = "models:/{model_name}/production".format(model_name=model_name)
-model = mlflow.sklearn.load_model(model_uri)
+model_uri = client.get_model_version_download_uri(model_name, model_version)
+print("Download URI: {}".format(model_uri))
 
 # COMMAND ----------
 
-# clear any models in the path
-# modelpath = "/dbfs/mnt/tmg-stage-ml-outputs/model-%s-%s" % (model_details.name, model_details.version)
-modelpath = "/dbfs/mnt/tmg-stage-ml-artifacts/model-%s-%s" % ("newtest-prod", 10)
-print(modelpath)
-shutil.rmtree(modelpath, ignore_errors=True)
+model_path = '/dbfs/Users/{0}/ml-artifacts/model-{1}-{2}'.format(user, model_name, model_version)
+model_path
 
 # COMMAND ----------
 
-# Save models to DBFS
-mlflow.sklearn.save_model(model, modelpath)
-
-# COMMAND ----------
-
-display(dbutils.fs.ls(modelpath.replace('/dbfs', 'dbfs:')))
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC #### Download artifacts to local path and upload to S3
-
-# COMMAND ----------
-
-local_modelpath = '/dbfs/Users/{0}/ml-artifacts/model-{1}-{2}'.format(user, model_name, model_version)
-print(local_modelpath)
-shutil.rmtree(local_modelpath, ignore_errors=True)
-
-# COMMAND ----------
-
-mlflow.sklearn.save_model(model, local_modelpath)
-
-# COMMAND ----------
-
-display(dbutils.fs.ls(local_modelpath.replace('/dbfs', 'dbfs:')))
-
-# COMMAND ----------
-
-modelpath = "/dbfs/mnt/tmg-stage-ml-outputs/model-%s-%s" % (model_name, model_version)
-print(modelpath)
-shutil.rmtree(modelpath, ignore_errors=True)
-
-# COMMAND ----------
-
-modelpath = "/dbfs/mnt/tmg-stage-ml-outputs/model-%s-%s/upload" % (model_name, model_version)
-dbutils.fs.mkdirs(modelpath)
-
-# COMMAND ----------
-
-# MAGIC %fs 
-# MAGIC ls dbfs:/mnt/tmg-stage-ml-outputs/
-
-# COMMAND ----------
-
-dbutils.fs.mv(local_modelpath, modelpath)
-
-# COMMAND ----------
-
-dbutils.fs.ls(local_modelpath.replace('/dbfs', 'dbfs:'))
-
-# COMMAND ----------
-
-dbutils.fs.ls(dbutils.fs.ls(modelpath.replace('/dbfs', 'dbfs:')), )
-
-# COMMAND ----------
-
-modelpath
-
-# COMMAND ----------
-
-display(dbutils.fs.ls('/mnt/tmg-stage-ml-outputs'))
+ModelsArtifactRepository(model_uri).download_artifacts(artifact_path=model_path)
 
 # COMMAND ----------
 
@@ -191,43 +127,6 @@ import os
 # COMMAND ----------
 
 os.listdir('/dbfs/Users/lhuang@themeetgroup.com/ml-artifacts/')
-
-# COMMAND ----------
-
-
-
-# COMMAND ----------
-
-import os
-import mlflow
-from mlflow.store.artifact.models_artifact_repo import ModelsArtifactRepository
-
-model_name = "Test-Stage-Model"
-model_stage = "Production"  # Should be either 'Staging' or 'Production'
-
-os.makedirs(local_modelpath+"model", exist_ok=True)
-local_path = ModelsArtifactRepository(
-    f'models:/{model_name}/{model_stage}').download_artifacts("", dst_path=local_modelpath)
-
-print(f'{model_stage} Model {model_name} is downloaded at {local_path}')
-
-# COMMAND ----------
-
-local_modelpath
-
-# COMMAND ----------
-
-prod_model = mlflow.pyfunc.load_model(local_modelpath)
-
-# COMMAND ----------
-
-df = spark.table("ml_push.silver_l7_push_meetme_train")
-pdf = df.toPandas()
-X_train=  pdf.drop("open_flag", axis=1)
-
-# COMMAND ----------
-
-sum(model.predict(X_train))/len(X_train)
 
 # COMMAND ----------
 
