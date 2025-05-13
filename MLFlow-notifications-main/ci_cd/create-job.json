@@ -3,16 +3,16 @@
   "existing_cluster_id": "1028-143027-p9nedn5v",
   "email_notifications": {
 	"on_success": [
-	  "dkashuba@themeetgroup.com"
+	  "linghypshen@gmail.com"
 	],
 	"on_failure": [
-	  "dkashuba@themeetgroup.com"
+	  "linghypshen@gmail.com"
 	],
 	"no_alert_for_skipped_runs": false
   },
   "timeout_seconds": 0,
   "notebook_task": {
-	"notebook_path": "/Repos/dkashuba@themeetgroup.com/MLFlow-notifications/notifications/push-analysis-stage/02-push-data-silver-delta_20220927",
+	"notebook_path": "/Repos/linghypshen/MLFlow-notifications/notifications/push-analysis-stage/02-push-data-silver-delta_20220927",
 	"source": "WORKSPACE"
   },
   "max_concurrent_runs": 1,
